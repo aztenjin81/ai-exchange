@@ -1391,6 +1391,14 @@ def _check_exits(client):
                         WHERE trade_id = %s
                           AND resolved_yes IS NULL
                     """, (result == 'yes', result, tid))
+                    # Also label all hold decisions for this market in the same window
+                    cur.execute("""
+                        UPDATE kalshi_decision_log
+                        SET resolved_yes = %s, result = %s
+                        WHERE market_ticker = %s
+                          AND resolved_yes IS NULL
+                          AND scan_time > NOW() - INTERVAL '30 minutes'
+                    """, (result == 'yes', result, ticker))
                     conn.commit()
                     print(f"  SETTLE [{tid}] {ticker[:25]}: {reason} P&L=${pnl:+.2f}")
                     exited += 1
@@ -1851,7 +1859,6 @@ def _settle_one_trade(client, tid, ticker, side, entry, qty, event):
                     UPDATE kalshi_decision_log
                     SET resolved_yes = %s, result = %s
                     WHERE market_ticker = %s
-                      AND was_executed = TRUE
                       AND resolved_yes IS NULL
                 """, (result == 'yes', result, ticker))
                 conn.commit()
