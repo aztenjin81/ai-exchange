@@ -1,0 +1,10 @@
+# No secrets in the vault
+.env
+*.key
+*.pem
+secrets/
+credentials/
+
+# OS junk
+.DS_Store
+Thumbs.db

@@ -1,0 +1,41 @@
+# Servers
+
+A list of all VMs and containers managed on pve01, with status, specs, and roles.
+
+filters:
+  and:
+    - 'file.folder == "Automation/Servers"'
+properties:
+  type:
+    displayName: Type
+  status:
+    displayName: Status
+  role:
+    displayName: Role
+  vcpu:
+    displayName: vCPU
+  memory_gb:
+    displayName: RAM (GB)
+  vm_id:
+    displayName: ID
+  ip:
+    displayName: IP
+views:
+  - type: table
+    name: All
+    order:
+      - file.name
+      - type
+      - status
+      - role
+      - vcpu
+      - memory_gb
+  - type: table
+    name: Running
+    filters:
+      and:
+        - 'status == "running"'
+    order:
+      - file.name
+      - type
+      - role
