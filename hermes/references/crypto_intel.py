@@ -324,15 +324,15 @@ def orderbook_pressure_from_depth(bids, asks, levels=10):
 
 
 def min_edge_for_ttl(ttl_min, coin_name=None):
-    # TTL-based dynamic minimum
+    # TTL-based dynamic minimum, relaxed to match MIN_EDGE_CENTS=3
     if ttl_min > 12:
-        base = 0.08
+        base = 0.04    # was 0.08
     elif ttl_min > 7:
-        base = 0.06
+        base = 0.03    # was 0.06
     elif ttl_min > 3:
-        base = 0.045
+        base = 0.03    # was 0.045
     else:
-        base = 0.08
+        base = 0.04    # was 0.08
     # Per-coin minimum overrides TTL-based if larger
     coin_min = MIN_EDGE_BY_COIN.get(coin_name) if coin_name else None
     if coin_min is not None and coin_min > base:
@@ -602,7 +602,7 @@ def already_have_open_market_position(market_ticker):
             FROM kalshi_trades
             WHERE market_ticker = %s
               AND status = 'open'
-              AND strategy_name IN ('crypto_intel', 'crypto_intel_prod', 'crypto_intel_microcap')
+              AND strategy_name IN ('crypto_intel_prod', 'crypto_intel_microcap')
         """, (market_ticker,))
         return bool(rows and int(rows[0][0]) > 0)
     except Exception as e:
