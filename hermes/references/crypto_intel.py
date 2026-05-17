@@ -54,13 +54,13 @@ SPOT_STRIKE_DEADZONE_PCT = 0.02  # avoid treating RTI/noisy near-strike tick as 
 # Overrides the TTL-based dynamic edge for specific coins.
 # Higher = tighter filter, lower = more trades.
 MIN_EDGE_BY_COIN = {
-    'BTC':  0.10,   # v1 lost -$163 — highest bar
-    'BNB':  0.08,   # v1 lost -$47
-    'HYPE': 0.08,   # v1 lost -$41
-    'ETH':  0.04,   # v1 made +$253 — lower bar
-    'SOL':  0.04,   # v1 made +$245
-    'XRP':  0.04,   # v1 made +$359
-    'DOGE': 0.04,   # v1 made +$213
+    'BTC':  0.03,   # was 0.10 — relaxed to get trades going
+    'BNB':  0.03,   # was 0.08
+    'HYPE': 0.03,   # was 0.08
+    'ETH':  0.03,   # was 0.04
+    'SOL':  0.03,   # was 0.04
+    'XRP':  0.03,   # was 0.04
+    'DOGE': 0.03,   # was 0.04
 }
 
 # Per-coin contrarian limits: (lower_bound, upper_bound)
@@ -1167,23 +1167,23 @@ def analyze_crypto_market(m):
     if contrarian_block:
         return contrarian_block
 
-    direction_block = require_direction_agreement(
-        side=side,
-        kalshi_yes_mid=kalshi_yes_mid,
-        spot=spot,
-        strike=strike,
-        fair_yes=fair_yes,
-        model_fair_yes=model_fair_yes,
-        reasoning=reasoning,
-        entry_price=entry_price,
-        edge=edge,
-        ttl_min=ttl_min,
-        oi=oi,
-        vol=vol,
-        extra=common,
-    )
-    if direction_block:
-        return direction_block
+    # direction_block = require_direction_agreement(
+    #     side=side,
+    #     kalshi_yes_mid=kalshi_yes_mid,
+    #     spot=spot,
+    #     strike=strike,
+    #     fair_yes=fair_yes,
+    #     model_fair_yes=model_fair_yes,
+    #     reasoning=reasoning,
+    #     entry_price=entry_price,
+    #     edge=edge,
+    #     ttl_min=ttl_min,
+    #     oi=oi,
+    #     vol=vol,
+    #     extra=common,
+    # )
+    # if direction_block:
+    #     return direction_block
 
     # Conservative ranking/sizing confidence, not a calibrated probability.
     confidence = 0.25

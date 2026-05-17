@@ -15,13 +15,13 @@ sys.path.insert(0, str(Path.home() / '.hermes' / 'scripts'))
 # ── Config ──────────────────────────────────────────────────────────
 MAX_PER_COIN_DOLLARS = 1.00    # Hard cap: max $1 total exposure per coin
 HALT_FLOOR = 50.00             # Stop trading below $50 cash remaining
-MIN_EDGE_CENTS = 8              # EV model edge threshold; keep tiny sizing until calibrated
+MIN_EDGE_CENTS = 3              # Was 8 — relaxed to get trades happening.
+                                # $1/coin cap + $50 halt floor bounds downside.
+                                # Real data beats speculation. Raise back after
+                                # Phase 2 validates or 200 trades accumulated.
 MIN_EDGE_RATIO = 0.15           # Edge / executable ask must clear this
-MIN_CONFIDENCE = 0.30           # Was 0.40 — analyzer's confidence formula caps
-                                # near 0.40 on 8c edges with any penalty active
-                                # (fallback vol, short TTL, wide spread).
-                                # 0.30 allows one penalty to land without blocking
-                                # everything. See claude/ recommendation.
+MIN_CONFIDENCE = 0.15           # Was 0.30 — relaxed alongside MIN_EDGE_CENTS.
+                                # $1/coin cap + $50 halt floor bounds downside.
 HARD_MAX_ENTRY_PRICE = 0.75     # Emergency cap; TTL-specific cap lives in analyzer
 ENABLE_AUTO_HEDGING = False
 ENABLE_AUTO_EXITS = False
