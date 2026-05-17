@@ -33,6 +33,7 @@ from kalshi_client import create_prod_client
 from crypto_intel import (
     fetch_crypto_markets, analyze_crypto_market, log_decision, write_cache,
     already_have_open_market_position, print_trade_debug, SIZE_MULTIPLIER_BY_SIDE,
+    harvest_outcomes,
 )
 from hermes_db import query, get_conn, execute
 
@@ -314,9 +315,13 @@ def production_scan(client=None):
     settled = settle_expired(client)
     if settled:
         print(f"  Settled: {settled}")
-        # Re-check balance after settlements
-        balance = get_balance(client)
-        print(f"  Balance after settle: ${balance:.2f}")
+
+    # 3b) Harvest outcomes for all unresolved markets (public data from Kalshi)
+    harvested = harvest_outcomes(client)
+
+    # Re-check balance after settlements
+    balance = get_balance(client)
+    print(f"  Balance after settle: ${balance:.2f}")
 
     # 4) Fetch and analyze markets
     markets = fetch_crypto_markets(client)

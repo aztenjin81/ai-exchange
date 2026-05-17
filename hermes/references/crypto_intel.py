@@ -1413,6 +1413,55 @@ def _check_exits(client):
     return exited
 
 
+def harvest_outcomes(client):
+    """Resolve decision_log rows for markets that have settled, whether or not we
+    traded them. The market's outcome is public — Kalshi's events API tells us
+    the result regardless of whether the bot had an open position.
+
+    Runs every scan cycle, prioritizes oldest unresolved markets first.
+    """
+    from hermes_db import query, execute
+    import time
+
+    rows = query("""
+        SELECT DISTINCT market_ticker, event_ticker
+        FROM kalshi_decision_log
+        WHERE resolved_yes IS NULL
+          AND market_ticker IS NOT NULL
+          AND event_ticker IS NOT NULL
+          AND scan_time < NOW() - INTERVAL '20 minutes'
+        LIMIT 30
+    """)
+
+    resolved = 0
+    for market_ticker, event_ticker in rows:
+        try:
+            event_data = client.get(f"/events/{event_ticker}")
+            if not event_data or 'markets' not in event_data:
+                continue
+            for m in event_data['markets']:
+                if m.get('ticker') != market_ticker:
+                    continue
+                status = m.get('status', '')
+                result = m.get('result', '').lower()
+                if status in ('finalized', 'settled', 'determined') and result in ('yes', 'no'):
+                    execute("""
+                        UPDATE kalshi_decision_log
+                        SET resolved_yes = %s, result = %s
+                        WHERE market_ticker = %s
+                          AND resolved_yes IS NULL
+                    """, (result == 'yes', result, market_ticker))
+                    resolved += 1
+                    break
+            time.sleep(0.1)
+        except Exception as e:
+            print(f"  Harvest error for {market_ticker}: {e}")
+
+    if resolved:
+        print(f"  Harvested outcomes: {resolved} markets")
+    return resolved
+
+
 def scan_and_log(client=None):
     """
     Full cycle: fetch all markets, analyze each, log every decision,
@@ -1447,6 +1496,8 @@ def scan_and_log(client=None):
     exited = _check_exits(client)
     if exited:
         print(f"  Settled: {exited} positions")
+
+    harvested = harvest_outcomes(client)
 
     # Step 2: Check capital deployed by strategy
     CRYPTO_BUDGET = 4000      # $4k max capital at risk for crypto 15-min
