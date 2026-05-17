@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+"""Phase 2 validation queries for intra-window price path tracking.
+
+Run these after ~7 days of data collection to check whether path
+features carry predictive signal beyond the log-normal model.
+"""
+import sys, os
+from pathlib import Path
+sys.path.insert(0, str(Path.home() / '.hermes' / 'scripts'))
+from hermes_db import query
+
+print("=" * 72)
+print("Q1: Does pct_time_above_strike predict YES outcomes?")
+print("=" * 72)
+r1 = query("""
+    SELECT
+        width_bucket((path_metrics->>'pct_above')::numeric, 0, 1, 5) AS bucket,
+        COUNT(*) AS decisions,
+        SUM(CASE WHEN resolved_yes THEN 1 ELSE 0 END) AS yes_outcomes,
+        ROUND(AVG(CASE WHEN resolved_yes THEN 1 ELSE 0 END)::numeric, 3) AS actual_yes_rate,
+        ROUND(AVG(fair_yes)::numeric, 3) AS model_predicted
+    FROM kalshi_decision_log
+    WHERE resolved_yes IS NOT NULL
+      AND path_metrics IS NOT NULL
+      AND (path_metrics->>'n')::int >= 5
+    GROUP BY bucket ORDER BY bucket
+""")
+print(f"{'Bucket':>8} {'N':>6} {'YES':>6} {'Actual':>8} {'Model':>8}")
+print("-" * 42)
+for r in r1:
+    print(f"{r[0]:>8} {r[1]:>6} {r[2]:>6} {float(r[3]):>8.3f} {float(r[4]):>8.3f}")
+
+print()
+print("=" * 72)
+print("Q2: Does streak length add signal?")
+print("=" * 72)
+r2 = query("""
+    SELECT
+        CASE WHEN spot_price > strike_price THEN 'above' ELSE 'below' END AS side,
+        width_bucket((path_metrics->>'streak')::numeric, 0, 15, 3) AS streak_bucket,
+        COUNT(*) AS n,
+        ROUND(AVG(CASE WHEN resolved_yes THEN 1 ELSE 0 END)::numeric, 3) AS yes_rate,
+        ROUND(AVG(fair_yes)::numeric, 3) AS model_yes
+    FROM kalshi_decision_log
+    WHERE resolved_yes IS NOT NULL
+      AND path_metrics IS NOT NULL
+    GROUP BY side, streak_bucket ORDER BY side, streak_bucket
+""")
+print(f"{'Side':>6} {'Strk':>6} {'N':>5} {'YesRate':>8} {'Model':>8}")
+print("-" * 38)
+for r in r2:
+    print(f"{r[0]:>6} {r[1]:>6} {r[2]:>5} {float(r[3]):>8.3f} {float(r[4]):>8.3f}")
+
+print()
+print("=" * 72)
+print("Q3: TWAP-vs-strike vs snapshot-vs-strike")
+print("=" * 72)
+r3 = query("""
+    SELECT
+        width_bucket((path_metrics->>'twap_vs_strike')::numeric, -1, 1, 5) AS twap_bucket,
+        width_backet(((spot_price - strike_price) / NULLIF(strike_price, 0) * 100)::numeric, -1, 1, 5) AS spot_bucket,
+        COUNT(*) AS n,
+        ROUND(AVG(CASE WHEN resolved_yes THEN 1 ELSE 0 END)::numeric, 3) AS yes_rate
+    FROM kalshi_decision_log
+    WHERE resolved_yes IS NOT NULL
+      AND path_metrics IS NOT NULL
+    GROUP BY twap_bucket, spot_bucket ORDER BY twap_bucket, spot_bucket
+""")
+print(f"{'TWAP':>8} {'Spot':>8} {'N':>5} {'YesRate':>8}")
+print("-" * 34)
+for r in r3:
+    print(f"{r[0]:>8} {r[1]:>8} {r[2]:>5} {float(r[3]):>8.3f}")
