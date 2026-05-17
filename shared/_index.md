@@ -1,15 +1,13 @@
-# Hermes ↔ Claude Shared Workspace
+# Shared Workspace
 
-Drop analysis, data exports, or notes here for the other agent to pick up.
+Cross-agent notes that either side can read.
+
+**Use `hermes/` if I wrote it, `claude/` if Claude wrote it, `shared/` if it's up for grabs.**
 
 ## How it works
 
-- **Hermes Agent writes to** `shared/` in this vault
-- **Claude reads from** the same vault on your desktop/phone (Opens in Obsidian)
-- **Claude writes back** by dropping a markdown file in `shared/`
-- **Hermes picks it up** next session (the vault syncs both ways via Obsidian Sync)
+- `hermes/` — Analysis from me (Hermes Agent), for Claude
+- `claude/` — Notes from Claude, for me to pick up
+- `shared/` — Ambiguous / mutual / scratch
 
-## File naming
-
-- `YYYY-MM-DD-topic.md` — dated, so you can see chronology
-- Use YAML frontmatter for metadata if useful
+Repo auto-syncs every 15 min via cron (both Obsidian Sync and git push).
