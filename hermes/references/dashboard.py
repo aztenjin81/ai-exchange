@@ -122,7 +122,8 @@ def fetch_closed_trades(strategy=None):
 def fetch_decision_history(limit=50):
     rows = pg_query("""
         SELECT coin_name, action, side, edge_cents, confidence, market_prob,
-               scan_time, spread, open_interest, trade_id, strategy_name
+               scan_time, spread, open_interest, trade_id, strategy_name,
+               resolved_yes, result
         FROM kalshi_decision_log
         ORDER BY id DESC LIMIT %s
     """, (limit,))
@@ -131,7 +132,7 @@ def fetch_decision_history(limit=50):
              "prob": float(r[5] or 0),
              "time": r[6].strftime("%H:%M:%S") if r[6] else "",
              "spread": float(r[7] or 0), "oi": float(r[8] or 0), "trade": r[9],
-             "strategy": r[10]}
+             "strategy": r[10], "resolved": r[11], "result": r[12]}
             for r in rows]
 
 
@@ -266,6 +267,25 @@ def fetch_heartbeat():
         return result
     except Exception:
         return []
+
+
+def fetch_harvest_stats():
+    """Outcome harvesting stats for operational health card."""
+    try:
+        r = pg_query("""
+            SELECT
+                COUNT(*) AS path_resolved,
+                (SELECT COUNT(*) FROM kalshi_decision_log
+                 WHERE path_metrics IS NOT NULL AND resolved_yes IS NULL) AS path_pending
+            FROM kalshi_decision_log
+            WHERE path_metrics IS NOT NULL AND resolved_yes IS NOT NULL
+        """)
+        total = pg_query("SELECT COUNT(*) FROM kalshi_decision_log WHERE resolved_yes IS NOT NULL")
+        resolved_total = total[0][0] if total else 0
+        pr = r[0] if r else (0, 0)
+        return {"with_path": pr[0], "pending": pr[1], "total_resolved": resolved_total}
+    except Exception:
+        return None
 
 
 def fetch_operational(strategy, hours=24):
@@ -680,7 +700,7 @@ def build_html(mode='all'):
         <tr><td>{d['time']}</td><td><b>{d['coin']}</b>{badge}</td>
         <td>{d['action'][:20]}</td><td><span class="{sig_c}">{d['side']}</span>{tb}</td>
         <td>{d['prob']:.1f}%</td><td>{d['edge']}c</td>
-        <td>{d['conf']:.0%}</td><td>{d['oi']:,.0f}</td></tr>"""
+        <td>{d['conf']:.0%}</td><td>{d['oi']:,.0f}</td><td>{'—' if d.get('resolved') is None else '✅ YES' if d['resolved'] else '❌ NO'}</td></tr>"""
 
     def closed_rows(trades):
         if not trades:
@@ -804,8 +824,8 @@ h2{{color:#58a6ff;font-size:1.1em;margin:20px 0 8px;border-bottom:1px solid #303
 ) if show_paper else "")}
 
 <h2>🧠 Decision Log (last {len(decisions)})</h2>
-<table class="tbl"><thead><tr><th>Time</th><th>Coin</th><th>Action</th><th>Side</th><th>Prob</th><th>Edge</th><th>Conf</th><th>OI</th></tr></thead>
-<tbody>{dec_rows if dec_rows else '<tr><td colspan="8" style="color:#484f58;text-align:center">No decisions logged yet</td></tr>'}</tbody></table>
+<table class="tbl"><thead><tr><th>Time</th><th>Coin</th><th>Action</th><th>Side</th><th>Prob</th><th>Edge</th><th>Conf</th><th>OI</th><th>Outcome</th></tr></thead>
+<tbody>{dec_rows if dec_rows else '<tr><td colspan="9" style="color:#484f58;text-align:center">No decisions logged yet</td></tr>'}</tbody></table>
 
 <h2>📈 Closed Trades ({len(closed)})</h2>
 <table class="tbl"><thead><tr><th>M</th><th>Ticker</th><th>Side</th><th>Entry→Exit</th><th>P&L</th><th>Reason</th><th>Order</th></tr></thead>
