@@ -918,6 +918,7 @@ def analyze_crypto_market(m):
             "side_fair_value": extra.get("side_fair_value"),
             "volatility": extra.get("volatility"),
             "vol_source": extra.get("vol_source"),
+            "path_metrics": extra.get("path_metrics"),
         }
         return base
 
@@ -1255,6 +1256,7 @@ def analyze_crypto_market(m):
         "yes_ask": yes_ask,
         "no_bid": no_bid,
         "no_ask": no_ask,
+        "path_metrics": path_metrics,
     }
 
 def log_decision(market, signal, was_executed=False, trade_id=None):
