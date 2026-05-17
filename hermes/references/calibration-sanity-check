@@ -1,0 +1,179 @@
+#!/usr/bin/env python3
+"""
+Recompute fair_yes for past trades using the vol multiplier and
+compare against actual outcomes. Validates that the new vol model
+moves predictions in the right direction.
+"""
+import sys
+from math import log, sqrt
+from statistics import NormalDist
+from pathlib import Path
+
+sys.path.insert(0, str(Path.home() / '.hermes' / 'scripts'))
+from hermes_db import query
+
+NORMAL = NormalDist()
+MULTIPLIER = 2.5  # the multiplier we're testing
+
+def fair_yes_new(spot, strike, vol, minutes):
+    if not spot or not strike or not vol or minutes <= 0:
+        return None
+    t_years = minutes / (365 * 24 * 60)
+    sigma_t = vol * MULTIPLIER * sqrt(t_years)
+    if sigma_t <= 0:
+        return None
+    z = log(spot / strike) / sigma_t
+    return max(0.01, min(0.99, NORMAL.cdf(z)))
+
+
+rows = query("""
+    SELECT model_fair_yes, fair_yes, resolved_yes, side,
+           spot_price, strike_price, volatility, ttl_minutes,
+           coin_name, edge_cents
+    FROM kalshi_decision_log
+    WHERE was_executed = TRUE
+      AND resolved_yes IS NOT NULL
+      AND model_fair_yes IS NOT NULL
+      AND spot_price IS NOT NULL
+      AND strike_price IS NOT NULL
+      AND volatility IS NOT NULL
+    ORDER BY scan_time
+""")
+
+if not rows:
+    print("No eligible rows found. Cannot run sanity check.")
+    sys.exit(1)
+
+print(f"Evaluating {len(rows)} resolved decisions\n")
+header = f"{'Coin':<5} {'Side':<4} {'Old pred':>9} {'New pred':>9} {'Actual':>7} {'Old err':>8} {'New err':>8}"
+print(header)
+print("-" * 70)
+
+old_total_err = 0
+new_total_err = 0
+improvements = 0
+n_compared = 0
+worst_coin = {}
+all_old_errs = []
+all_new_errs = []
+
+for r in rows:
+    old_pred = float(r[0])  # model_fair_yes (without multiplier)
+    blended_pred = float(r[1])  # fair_yes (after kalshi blend)
+    resolved = r[2]  # True/False
+    side = r[3]
+    spot = float(r[4])
+    strike = float(r[5])
+    vol = float(r[6])
+    ttl = float(r[7])
+    coin = r[8]
+
+    new_pred = fair_yes_new(spot, strike, vol, ttl)
+    if new_pred is None:
+        continue
+
+    actual = 1.0 if resolved else 0.0
+    old_err = (old_pred - actual) ** 2
+    new_err = (new_pred - actual) ** 2
+
+    all_old_errs.append(old_err)
+    all_new_errs.append(new_err)
+
+    if new_err < old_err:
+        improvements += 1
+
+    old_total_err += old_err
+    new_total_err += new_err
+    n_compared += 1
+
+    # Track per-coin
+    if coin not in worst_coin:
+        worst_coin[coin] = {"old_err": 0, "new_err": 0, "n": 0}
+    worst_coin[coin]["old_err"] += old_err
+    worst_coin[coin]["new_err"] += new_err
+    worst_coin[coin]["n"] += 1
+
+    # Print first 25
+    if n_compared <= 25:
+        print(f"{coin:<5} {side:<4} {old_pred:>9.3f} {new_pred:>9.3f} {actual:>7.1f} "
+              f"{old_err:>8.3f} {new_err:>8.3f}")
+
+# Print the rest indicator
+if n_compared > 25:
+    print(f"  ... and {n_compared - 25} more rows")
+print()
+
+# Summary
+old_brier = old_total_err / n_compared
+new_brier = new_total_err / n_compared
+print(f"{'='*60}")
+print(f"Total evaluated: {n_compared}")
+print(f"Old Brier score (model only):  {old_brier:.4f}")
+print(f"New Brier score (with {MULTIPLIER}x):  {new_brier:.4f}")
+print(f"Predictions improved: {improvements}/{n_compared} "
+      f"({improvements*100/n_compared:.1f}%)")
+print(f"{'='*60}")
+print()
+
+# Check acceptance criteria
+brier_improvement_pct = (1 - new_brier / old_brier) * 100
+improvement_pct = improvements / n_compared * 100
+
+print("Acceptance criteria check:")
+print(f"  Brier improvement: {brier_improvement_pct:.1f}% (need >= 10%)")
+print(f"  Predictions improved: {improvement_pct:.1f}% (need >= 60%)")
+print()
+
+if new_brier < old_brier and improvement_pct >= 60 and brier_improvement_pct >= 10:
+    print(f"✅ ALL CRITERIA PASS. Multiplier of {MULTIPLIER}x is safe to deploy.")
+else:
+    print(f"❌ CRITERIA NOT MET. Do not deploy {MULTIPLIER}x as-is.")
+    if brier_improvement_pct < 10:
+        print(f"   -> Brier improved by only {brier_improvement_pct:.1f}% (need >= 10%)")
+    if improvement_pct < 60:
+        print(f"   -> Only {improvement_pct:.1f}% of predictions improved (need >= 60%)")
+    print(f"\nTry multipliers between 1.5x and 4.0x to find the optimal value.")
+
+print()
+print("Per-coin breakdown:")
+print(f"{'Coin':<6} {'N':>4} {'Old Brier':>10} {'New Brier':>10} {'Change':>8}")
+print("-" * 42)
+for coin, data in sorted(worst_coin.items()):
+    ob = data["old_err"] / data["n"]
+    nb = data["new_err"] / data["n"]
+    ch = (nb - ob) / ob * 100 if ob else 0
+    arrow = "✅" if nb < ob else "❌"
+    print(f"{coin:<6} {data['n']:>4} {ob:>10.4f} {nb:>10.4f} {ch:>+7.1f}% {arrow}")
+
+print()
+print("By model prediction bucket (old model):")
+buckets = {}
+for r in rows:
+    old_pred = float(r[0])
+    resolved = r[2]
+    actual = 1.0 if resolved else 0.0
+    # Also compute new for this bucket
+    spot = float(r[4])
+    strike = float(r[5])
+    vol = float(r[6])
+    ttl = float(r[7])
+    new_pred = fair_yes_new(spot, strike, vol, ttl)
+    if new_pred is None:
+        continue
+    bucket = int(old_pred * 10)  # 0-9
+    if bucket not in buckets:
+        buckets[bucket] = {"n": 0, "sum_old": 0, "sum_new": 0, "wins": 0}
+    buckets[bucket]["n"] += 1
+    buckets[bucket]["sum_old"] += old_pred
+    buckets[bucket]["sum_new"] += new_pred
+    buckets[bucket]["wins"] += actual
+
+print(f"{'Bucket':>8} {'N':>4} {'Old avg':>8} {'New avg':>8} {'Actual WR':>10}")
+print("-" * 44)
+for bucket in sorted(buckets.keys()):
+    d = buckets[bucket]
+    avg_old = d["sum_old"] / d["n"]
+    avg_new = d["sum_new"] / d["n"]
+    wr = d["wins"] / d["n"]
+    label = f"{bucket*10}-{(bucket+1)*10}%"
+    print(f"{label:>8} {d['n']:>4} {avg_old:>8.3f} {avg_new:>8.3f} {wr:>10.3f}")
