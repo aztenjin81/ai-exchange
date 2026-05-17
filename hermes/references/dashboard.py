@@ -794,6 +794,21 @@ h2{{color:#58a6ff;font-size:1.1em;margin:20px 0 8px;border-bottom:1px solid #303
 .badge-paper-sm{{font-size:0.65em;background:#1f6feb;color:#fff;padding:0 4px;border-radius:3px;margin-left:3px;font-weight:700}}
 </style>
 <meta http-equiv="refresh" content="30">
+<script>
+// Poll for new data — reloads when cache timestamp changes
+let lastTs = null;
+function poll() {{
+  fetch('/timestamp')
+    .then(r => r.text())
+    .then(t => {{
+      if (lastTs && t !== lastTs) location.reload();
+      lastTs = t;
+    }})
+    .catch(() => {{}});
+}}
+setInterval(poll, 5000);
+poll();
+</script>
 </head>
 <body>
 <h1>📊 Kalshi Trading Dashboard</h1>
@@ -860,6 +875,13 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
             self.wfile.write(html.encode("utf-8"))
+        elif parsed.path == "/timestamp":
+            ts = str(load_cache().get("_ts", "0"))
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            self.wfile.write(ts.encode())
         else:
             self.send_response(404)
             self.end_headers()
