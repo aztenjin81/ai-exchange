@@ -1088,6 +1088,25 @@ def analyze_crypto_market(m):
             **common,
         )
 
+    # YES asymmetry guard: 52.9% accuracy means YES at high prices
+    # loses more than it wins because of asymmetric payout (lose entry,
+    # win spread). NO doesn't have this problem. Drop this cap once
+    # isotonic calibration is fit and YES accuracy improves.
+    YES_MAX_ENTRY_PRICE = 0.40
+    if side == "yes" and entry_price > YES_MAX_ENTRY_PRICE:
+        return hold(
+            "yes_too_expensive_for_known_bias",
+            entry_price=entry_price,
+            edge=edge,
+            reasoning=reasoning + [
+                f"YES entry {entry_price:.2f} > ${YES_MAX_ENTRY_PRICE:.2f} cap.",
+                "Model's 52.9% YES accuracy is unprofitable at high prices",
+                "due to asymmetric payout (lose entry, win spread).",
+                "NO side has no equivalent block — only YES is restricted.",
+            ],
+            **common,
+        )
+
     if edge_ratio < MIN_EDGE_RATIO:
         h = hold(
             "edge_ratio_too_small",
