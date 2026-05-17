@@ -18,6 +18,12 @@ from urllib.request import Request, urlopen
 
 CACHE_FILE = Path.home() / '.hermes' / 'cache' / 'kalshi_live.json'
 
+# Shared market snapshot cache — paper and prod both call fetch_crypto_markets()
+# independently, getting different results due to timing. This cache ensures
+# both see the same snapshot if called within MARKET_CACHE_TTL seconds.
+_MARKET_CACHE = {"ts": 0, "data": None}
+MARKET_CACHE_TTL = 15  # seconds
+
 # Side-based sizing multiplier.
 # NO bets historically 94% correct, YES bets 53% correct.
 # Half-size on YES preserves learning; full-size on NO.
@@ -804,7 +810,21 @@ def _get_momentum_baseline(series_ticker):
 
 
 def fetch_crypto_markets(client=None):
-    """Fetch current open crypto 15-min markets."""
+    """Fetch current open crypto 15-min markets.
+
+    Shares snapshot via file cache so paper and prod see the same data
+    when running within MARKET_CACHE_TTL seconds of each other.
+    """
+    market_cache = Path.home() / '.hermes' / 'cache' / 'markets.json'
+    if market_cache.exists():
+        age = time.time() - market_cache.stat().st_mtime
+        if age < MARKET_CACHE_TTL:
+            try:
+                with open(market_cache) as f:
+                    return json.load(f)
+            except Exception:
+                pass
+
     if client is None:
         from kalshi_client import KalshiClient
         client = KalshiClient()
@@ -837,6 +857,13 @@ def fetch_crypto_markets(client=None):
         else:
             results.append({"name": name, "series_ticker": ticker, "error": "no_open_market"})
         time.sleep(0.2)
+    # Write cache so prod can reuse this snapshot
+    try:
+        market_cache.parent.mkdir(parents=True, exist_ok=True)
+        with open(market_cache, "w") as f:
+            json.dump(results, f)
+    except Exception:
+        pass
     return results
 
 
