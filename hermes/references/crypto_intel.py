@@ -1616,6 +1616,10 @@ def write_cache(markets, precomputed_signals=None):
                 "spot": sig.get("spot_price"),
                 "oi": m.get("open_interest", 0),
                 "baseline": round(sig.get("momentum_baseline", 0.5) * 100, 0) if sig.get("lookback", 0) >= 2 else None,
+                # Path metrics for dashboard display (operational visibility, not predictive signal)
+                "pct_above": sig.get("path_metrics", {}).get("pct_above") if sig.get("path_metrics") else None,
+                "streak": sig.get("path_metrics", {}).get("streak") if sig.get("path_metrics") else None,
+                "crossings": sig.get("path_metrics", {}).get("crossings") if sig.get("path_metrics") else None,
             })
         CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(CACHE_FILE, "w") as f:

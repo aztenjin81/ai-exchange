@@ -620,7 +620,7 @@ def build_html(mode='all'):
     crypto_rows = ""
     for c in markets:
         if c.get("error"):
-            crypto_rows += f'<tr class="skip"><td>{c.get("icon","?")} {c["name"]}</td><td colspan="9">{c["error"]}</td></tr>\n'
+            crypto_rows += f'<tr class="skip"><td>{c.get("icon","?")} {c["name"]}</td><td colspan="12">{c["error"]}</td></tr>\n'
             continue
         sig = c.get("signal", "hold")
         if sig == "yes":
@@ -640,6 +640,9 @@ def build_html(mode='all'):
             <td>{sig_html}</td>
             <td>{c.get('edge',0)}c</td>
             <td><div class="conf-bar"><div class="conf-fill" style="width:{conf_pct}%"></div></div>{conf_pct}%</td>
+            <td>{c.get('pct_above','—') or '—'}</td>
+            <td>{c.get('streak','—') or '—'}</td>
+            <td>{c.get('crossings','—') or '—'}</td>
             <td>{c.get('baseline','—') or '—'}{'%' if c.get('baseline') else ''}</td>
             <td>{spot_str}</td>
             <td>{c.get('oi',0):,.0f}</td>
@@ -785,7 +788,7 @@ h2{{color:#58a6ff;font-size:1.1em;margin:20px 0 8px;border-bottom:1px solid #303
 {tier4_html}
 
 <h2>🪙 Crypto 15-Min — Live Leans</h2>
-<table class="tbl"><thead><tr><th>Coin</th><th>Prob</th><th>Bid/Ask</th><th>Lean</th><th>Edge</th><th>Conf</th><th>Base</th><th>Spot</th><th>OI</th></tr></thead>
+<table class="tbl"><thead><tr><th>Coin</th><th>Prob</th><th>Bid/Ask</th><th>Lean</th><th>Edge</th><th>Conf</th><th>Above</th><th>Strk</th><th>Xings</th><th>Base</th><th>Spot</th><th>OI</th></tr></thead>
 <tbody>{crypto_rows}</tbody></table>
 
 {"".join((
