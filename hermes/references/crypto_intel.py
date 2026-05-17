@@ -27,6 +27,8 @@ SIZE_MULTIPLIER_BY_SIDE = {
     'yes': 0.5,
 }
 
+from path_tracker import get_window_path, compute_path_metrics
+
 SERIES = [
     ("BTC", "KXBTC15M", "#f7931a", "₿"),
     ("ETH", "KXETH15M", "#627eea", "⟠"),
@@ -976,6 +978,12 @@ def analyze_crypto_market(m):
             **common,
         )
 
+    # Phase 1: Intra-window price path tracking (data collection only, no behavior change)
+    ticker = m.get("market_ticker", "")
+    history = get_window_path(ticker)
+    path_metrics = compute_path_metrics(history, strike, spot, ttl_min)
+    common["path_metrics"] = path_metrics
+
     model_fair_yes = fair_yes_probability(
         spot=spot,
         strike=strike,
@@ -1261,8 +1269,9 @@ def log_decision(market, signal, was_executed=False, trade_id=None):
                  open_interest, ttl_minutes, strike_price, reasoning,
                  spot_price, was_executed, trade_id, cycle_number,
                  model_fair_yes, fair_yes, fair_no, side_fair_value,
-                 edge_ratio, volatility, exit_recommendation, hedge_evaluation)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                 edge_ratio, volatility, exit_recommendation, hedge_evaluation,
+                 path_metrics)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, (
             signal.get("strategy", "crypto_intel"),
             market.get("market_ticker", ""),
@@ -1294,6 +1303,7 @@ def log_decision(market, signal, was_executed=False, trade_id=None):
             signal.get("volatility"),
             json.dumps(signal.get("exit_recommendation")) if signal.get("exit_recommendation") is not None else None,
             json.dumps(signal.get("hedge_evaluation")) if signal.get("hedge_evaluation") is not None else None,
+            json.dumps(signal.get("path_metrics")) if signal.get("path_metrics") is not None else None,
         ))
     except Exception as e:
         print(f"  [crypto_intel] Log error: {e}", file=__import__('sys').stderr)
