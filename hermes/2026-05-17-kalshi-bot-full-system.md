@@ -459,7 +459,7 @@ All no_agent scripts produce stdout verbatim; empty stdout = silent. Agent-drive
 ## Current State (as of 2026-05-18)
 
 ### Portfolio
-- **Paper balance (DB):** $5.88 (drawn down from starting capital — paper is actively trading)
+- **Paper balance (DB):** $1,000,000.00 (set manually — paper is actively trading)
 - **Production balance (Kalshi API):** $45.92 (synced from exchange)
 - **Production exposure cap:** $1.00 per coin, $30 HALT floor
 - **Paper budget:** $4k max, 3 concurrent positions per coin
