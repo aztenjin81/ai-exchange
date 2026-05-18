@@ -1,0 +1,88 @@
+{
+  "strategy": "crypto_intel_prod",
+  "generated_at": "2026-05-18T01:39:58.392488+00:00",
+  "deploy_timestamp": "2026-05-17 07:53:36-07",
+  "trades": 38,
+  "wins": 6,
+  "losses": 31,
+  "win_rate": 0.1579,
+  "total_pnl": -5.94,
+  "total_at_risk": 20.33,
+  "roi_pct": -29.22,
+  "by_side": [
+    {
+      "side": "no",
+      "trades": 16,
+      "wins": 5,
+      "win_rate": 0.312,
+      "total_pnl": -0.2,
+      "avg_exposure": 0.76
+    },
+    {
+      "side": "yes",
+      "trades": 22,
+      "wins": 1,
+      "win_rate": 0.045,
+      "total_pnl": -5.74,
+      "avg_exposure": 0.37
+    }
+  ],
+  "by_coin": [
+    {
+      "coin": "ETH",
+      "trades": 8,
+      "wins": 3,
+      "win_rate": 0.375,
+      "total_pnl": 3.77
+    },
+    {
+      "coin": "XRP",
+      "trades": 4,
+      "wins": 1,
+      "win_rate": 0.25,
+      "total_pnl": 0.69
+    },
+    {
+      "coin": "DOGE",
+      "trades": 5,
+      "wins": 1,
+      "win_rate": 0.2,
+      "total_pnl": -0.26
+    },
+    {
+      "coin": "BNB",
+      "trades": 1,
+      "wins": 0,
+      "win_rate": 0.0,
+      "total_pnl": -0.33
+    },
+    {
+      "coin": "HYPE",
+      "trades": 1,
+      "wins": 0,
+      "win_rate": 0.0,
+      "total_pnl": -0.92
+    },
+    {
+      "coin": "OTHER",
+      "trades": 2,
+      "wins": 0,
+      "win_rate": 0.0,
+      "total_pnl": -1.42
+    },
+    {
+      "coin": "BTC",
+      "trades": 5,
+      "wins": 1,
+      "win_rate": 0.2,
+      "total_pnl": -2.1
+    },
+    {
+      "coin": "SOL",
+      "trades": 12,
+      "wins": 0,
+      "win_rate": 0.0,
+      "total_pnl": -5.37
+    }
+  ]
+}

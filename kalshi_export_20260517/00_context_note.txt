@@ -1,0 +1,51 @@
+Kalshi Sizing Checkpoint — Context Note
+=========================================
+Generated: 2026-05-17 18:39 MST (2026-05-18 01:39 UTC)
+
+1. Sizing Deploy Timestamp
+---------------------------
+2026-05-17 07:53:36 MST (14:53:36 UTC)
+Commit: 6d1159e "calibration fix: NO-side sizing multiplier (YES 0.5x, NO 1.0x)"
+The constant SIZE_MULTIPLIER_BY_SIDE = {'no': 1.0, 'yes': 0.5} was deployed
+to crypto_intel.py, applied in kalshi-crypto-prod scanner.
+
+2. Code Changes Between Deploy and Export
+------------------------------------------
+- 55f2133 — fix: harvest_outcomes closes stale trades when resolving markets
+- 0d0c79e — fix: bump decision log window to 500
+- 48bc5e6 — config: pause paper, lower prod floor to $30
+- 2d8aa1d — feat: separate PAPER/LIVE tabs on dashboard
+
+None of these affect prod trade logic or sizing.
+
+3. Anomalies
+-------------
+- Paper scanner paused partway through the window (14:50 MST), so the
+  shared market cache is no longer being refreshed by paper. Prod scanner
+  fetches its own markets independently, so this doesn't affect prod data.
+- Postgres password was rotated during this session (not affecting data).
+- Dashboard was restarted multiple times during Grafana setup.
+
+4. Market Regime Impression
+-----------------------------
+38 trades across ~18 hours since deploy. That's ~2.1 trades/hour in
+crypto 15-min markets. The markets were active — typical weekend crypto
+action with normal volatility. SOL dominated by volume (12 of 38 trades).
+No extreme market events during this window.
+
+5. Notable Patterns (from the raw numbers)
+--------------------------------------------
+- YES side is catastrophically worse than anticipated: 1 win in 22 trades
+  (4.5% WR), -$5.74 total. The cheap-side contrarian bias is in full effect.
+- NO side is roughly breakeven: 5 wins in 16 trades (31.2% WR), -$0.20.
+  With fees that's a small loss, but fundamentally the NO strategy is
+  directionally correct even if the edge model isn't reliably picking winners.
+- SOL is the biggest drain: 12 trades, 0 wins, -$5.37. Despite being the
+  most-traded coin, the model has zero predictive power on SOL in this
+  window.
+- ETH is the only consistently profitable coin: +$3.77 on 8 trades.
+- The asymmetry is real: YES average exposure ($0.37) is exactly half of
+  NO ($0.76) as designed by the multiplier. But it doesn't matter because
+  YES is losing so badly.
+- Total P&L: -$5.94 on $20.33 at risk (ROI -29.2%) — but all the damage
+  is YES-side losses (-$5.74). NO-side is effectively flat.
