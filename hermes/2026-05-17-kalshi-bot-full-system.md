@@ -456,7 +456,11 @@ All no_agent scripts produce stdout verbatim; empty stdout = silent. Agent-drive
 
 ---
 
-## Current State (as of 2026-05-18)
+## Current State (as of 2026-05-19)
+
+> See also: [[2026-05-19-kalshi-calibration-and-depth]] — narrative of
+> what shipped on 2026-05-19 (per-side floors, NO entry cap, empirical
+> calibration, orderbook depth ingestion, exchange-status pre-flight).
 
 ### Portfolio (corrected mental model — 2026-05-18 PM)
 
@@ -487,13 +491,20 @@ The log-normal `fair_yes_probability()` is directionally asymmetric on 15-min cr
 - Target: 100-200 resolved v2 trades before training isotonic regression
 
 ### Active Deployments
+- **Empirical isotonic calibration of `fair_yes`** (commit `94277d9`, 2026-05-19) — 20-bin LUT fit on 16,099 decision rows. Maps blended fair_yes → realized YES rate. Tightens NO edges by 3-7c in the high-fair_yes range where the model was systematically underpredicting YES.
+- **Asymmetric per-coin per-side floors** (`MIN_EDGE_BY_COIN_SIDE`, commit `6b55eb8`, 2026-05-19):
+  - `('BTC','no')=0.07`, `('SOL','no')=0.07`, `('ETH','no')=0.03`, `('XRP','no')=0.03`, `('HYPE','no')=0.03`
+  - `('BTC','yes')=0.99`, `('HYPE','yes')=0.99`, `('SOL','yes')=0.99`, `('ETH','yes')=0.99`, `('XRP','yes')=0.99` — flat-block YES on these 5 coins
+- **`NO_MAX_ENTRY_PRICE = 0.50`** (commit `557c163`, 2026-05-19) — hard guard mirroring `YES_MAX_ENTRY_PRICE = 0.40`. Defense-in-depth against the calibration error that drove the historical −$1,642 NO ≥50c leak.
+- **`/exchange/status` pre-flight** (commit `b7d1c9a`, 2026-05-19) — scan_and_log skips cycle if `trading_active=false`, writes `status='exchange_paused'` heartbeat.
+- **Orderbook depth ingestion** (commit `b7d1c9a`, 2026-05-19) — batch `/markets/orderbooks` call per cycle, top-10 levels per side per market, persisted to `kalshi_decision_log.orderbook_jsonb`. ~450 bytes/row.
 - **Side-biased sizing:** `SIZE_MULTIPLIER_BY_SIDE = {'no': 1.0, 'yes': 0.5}` deployed 2026-05-17
-- **Global MIN_EDGE_CENTS:** 6 (loosened from 8 on 2026-05-18 to capture 6-9¢ bucket)
+- **Global MIN_EDGE_CENTS:** 6 (loosened from 8 on 2026-05-18)
 - **MIN_CONFIDENCE:** 0.30 (reverted from 0.15 on 2026-05-18)
-- **MIN_EDGE_BY_COIN (analyzer):** BTC=10¢, HYPE=8¢, ETH/SOL/XRP/DOGE=4¢, BNB=disabled
+- **MIN_EDGE_BY_COIN (analyzer):** BTC=10¢, HYPE=8¢, ETH/SOL/XRP/DOGE=6¢ (raised 2026-05-18), BNB=disabled (0.99)
 - **HALT_FLOOR:** $30 (lowered from $50 on 2026-05-17)
 - **Symmetric vol multiplier:** rejected — 2.5x sweep couldn't fix per-direction bias
-- **`require_direction_agreement` guard:** RE-ENABLED then REVERTED on 2026-05-18 PM. Commit `022ac27` (re-enable) was rolled back by `a29f86c` after backtest against 137 executed trades showed the guard would block 91% of trade volume while only ~breaking even on P&L (saves ~$409 in YES losses, costs ~$394 in NO profits). The guard requires Kalshi/spot/model consensus — but the strategy's edge comes from disagreement between those signals, so they are structurally opposed. Better surgical fixes (per-coin YES disable, per-coin edge raise) under investigation against the 15K-row decision_log dataset.
+- **`require_direction_agreement` guard:** REMAINS COMMENTED OUT after backtest showed it would block 91% of trade volume for break-even P&L. Per-coin YES blockers (above) are the surgical replacement.
 
 ### Known Issues (Resolved)
 1. ~~Prod auth failing from cron (5 recurrences)~~ — Fixed 2026-05-17: stale module-level vars in `kalshi_client.py` changed to read `os.environ` directly at call time. The final fix was commit `b86eeef` which also set up the heartbeat.
@@ -503,17 +514,22 @@ The log-normal `fair_yes_probability()` is directionally asymmetric on 15-min cr
 5. ~~`require_direction_agreement` guard re-enabled (commit `022ac27`) then REVERTED (commit `a29f86c`)~~ — Re-enable was wrong. Backtest against 137 executed trades with full data showed the guard would block 91% of volume (217 of 232 trades), and while it correctly catches losers more often than winners (76% of blocks were losers), the trade-volume cost dwarfs the P&L benefit: blocking 89 NO bets costs +$394, blocking 48 YES bets saves -$409, net ~break-even. Lesson: the strategy's edge depends on Kalshi/spot/model **disagreement**, while the guard requires **agreement** — they are structurally opposed and cannot coexist. Per-coin YES disable (proposed; see Known Issues > Open) is a more surgical fix for the same losing trades without nuking volume.
 6. ~~Prod `get_balance` overwriting paper balance~~ (commit `1d70b24`) — REVERTED (commit `10b3f25`). The framing in this entry and in CLAUDE.md was wrong. Looking at `dashboard.py:36–65`: `kalshi_portfolio.current_balance` is **prod's** column (dashboard's `fetch_prod_portfolio()` reads it as the live prod balance synced from the Kalshi API). Paper's equity is computed separately from `starting_balance + total_realized_pnl` (dashboard's `fetch_paper_portfolio()`). The prior session's claim that prod was "destroying paper's bankroll" was based on a misread; paper's apparent $1M in `current_balance` was itself the bug — paper code (`crypto_intel.py:1739, 1455, 1556, 1901`) was writing to prod's column. Restoring the prod sync was the right call. The remaining issue is that several paper code paths still write to `current_balance` (which should be only prod's); cleanest fix would be to remove paper's writes there entirely and have it compute its own running bankroll from `starting_balance + total_realized_pnl` instead. Tracked separately under Known Issues > Open.
 7. ~~Paper `_execute_trade` silently dropping trades on balance check~~ — Fixed 2026-05-18 PM (commit `9b18bad`). Removed the `SELECT current_balance` + `if bal < cost: return None, None` block at `crypto_intel.py:1703–1708`. Paper is scoring not a broker sim and does not gate on capital; the gate caused the "executed-but-not-persisted" gap (decision-log `was_executed=True` rows with no corresponding `kalshi_trades` insert). The running balance deduction below is kept; the row can now go negative for paper, which is correct.
+8. ~~Counterfactual projection overshot realized WR by 35-50pts~~ — Identified 2026-05-19 morning when 32ed036's asymmetric NO floor produced -$108 overnight despite projected wins. Root cause: survivorship bias (rejected sample wasn't representative of post-loosening admits). Patched via two surgical layers: tighter per-side floors on losing coins (`6b55eb8`) and a flat `NO_MAX_ENTRY_PRICE = 0.50` guard (`557c163`).
+9. ~~Model systematically biased low on YES at high fair_yes~~ — Audit on 16,099 decision rows showed +4 to +7.5pt underprediction in 0.45-0.95 range. Fixed at source by empirical calibration LUT (commit `94277d9`, 2026-05-19). Strictly monotonic in y, piecewise-linear interpolation. Applied to blended fair_yes; tightens NO edges by 3-7c in the dangerous range.
+10. ~~Top-of-book quotes were the only Kalshi market data we consumed~~ — Identified 2026-05-19 when reviewing whether websockets would help. Kalshi's REST API exposes full orderbook depth (`/markets/orderbooks` batch endpoint) which we were not calling at all. Fixed by commit `b7d1c9a`: added batch orderbook fetch per scan, top-10 levels per side persisted to `kalshi_decision_log.orderbook_jsonb`. Trading logic still uses top-of-book quote from `/markets`; orderbook is additive for analysis.
+11. ~~No detection of Kalshi maintenance windows~~ — Scanner would log misleading decision rows during exchange downtime. Fixed by `/exchange/status` pre-flight at start of `scan_and_log` (commit `b7d1c9a`). Writes `status='exchange_paused'` heartbeat and returns early.
 
 ### Known Issues (Open)
-- **Prod scanner is paused** — needs manual re-enable via Hermes cron when ready to trade live again
-- **Insufficient resolved v2 trades** for calibration modeling — need 100-200 resolved trades before isotonic regression is viable
-- **Vault path in old docs says `~/.hermes-vault/`** — actual path is `~/hermes-vault/` (no dot prefix)
-- **Paper code writes to prod's `current_balance` column** (`crypto_intel.py:1739, 1455, 1556, 1901`, plus `_check_exits` etc.) — paper should not touch this column at all. Paper's own running bankroll, if it needs one, should be `starting_balance + total_realized_pnl` (already what the dashboard does) and `kalshi_portfolio.starting_balance` should never change after init. Clean fix: delete all paper writes against `current_balance`. Until then, those writes corrupt prod's display whenever prod isn't actively running to overwrite.
+- **Prod scanner is paused** — needs manual re-enable via Hermes cron when ready to trade live again. Real money balance ~$45.92 (as of 2026-05-17 pause).
+- **Paper code still writes to prod's `current_balance` column** — partial fix landed (`549f4b2` stopped the worst offenders), but `_check_exits` and `harvest_outcomes` paths may still touch it. Until resolved, prod's display shows garbage `~$999,975` whenever prod isn't running to auto-correct. Clean fix: delete all paper writes against `current_balance`.
+- **`/markets` quote vs `/orderbook` best-bid divergence** — observed several-cent disagreement (e.g. BTC: `/markets` yes_bid=0.26, `/orderbook` best yes_bid=0.31). Most likely API-cache freshness gap. Scanner currently uses `/markets` quote for trading; switching to orderbook-derived prices is a follow-up decision pending characterization.
+- **Calibration efficacy verification** — `94277d9` shipped 2026-05-19 ~07:15 MST. First few days of post-deploy data needed to confirm bias is corrected at source. Once verified, `NO_MAX_ENTRY_PRICE` and asymmetric YES blockers can be relaxed.
+- **HYPE has REVERSED calibration bias** (overpredicts YES). Global LUT may slightly over-correct. Per-coin LUT is a follow-up.
+- **DOGE NO bleeding** — 13% WR overnight (5/18→5/19), -$44. Not in asymmetric override; falls through to `MIN_EDGE_BY_COIN['DOGE']=0.06`. Tighten if pattern persists.
 - **`scan_micro_cap` (`crypto_intel.py:1783`) is dead code with a sizing bug** — no caller anywhere; if invoked manually with the current $1M paper balance, would attempt ~$500K real-money trade. Defensive clamp or function deletion is a follow-up.
-- **`fair_yes_probability` returns 0/1 on missing or zero vol** — `crypto_intel.py:155–156, 159–160`. Currently masked because `FALLBACK_VOL` covers all 7 coins, but the code is overconfident-by-default. Should return 0.5.
-- **`scan_and_log` budget / per-coin rejects don't mutate `signal["reason"]`** — lines 1631, 1638. Decision-log rows show misleading `action="positive_ev_..."` with `was_executed=False`. Observability nit.
-- **`evaluate_crypto_market` uses v1 `edge = mid - 0.50`** — `crypto_intel.py:910`. The result's `edge_cents` field is never written to the dashboard cache (only `prob` is consumed), so this is internal cleanup, not a user-facing inconsistency. Doc-only fix.
-- **Stale v1 P&L comments** on `MIN_EDGE_BY_COIN` and `CONTRARIAN_LIMITS` (`crypto_intel.py:72–110`) — refresh once ≥100 resolved v2 trades exist.
+- **`fair_yes_probability` returns 0/1 on missing or zero vol** — `crypto_intel.py:202–216`. Currently masked because `FALLBACK_VOL` covers all 7 coins, but the code is overconfident-by-default. Should return 0.5.
+- **`scan_and_log` budget / per-coin rejects don't mutate `signal["reason"]`** — Decision-log rows show misleading `action="positive_ev_..."` with `was_executed=False`. Observability nit.
+- **`evaluate_crypto_market` uses v1 `edge = mid - 0.50`** — Dashboard cache only consumes `prob`, so this is internal cleanup, not user-facing. Doc-only fix.
 
 ---
 
