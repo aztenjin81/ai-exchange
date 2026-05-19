@@ -1,44 +1,50 @@
-# Paper 24h Status — Initial
+# Paper 24h Status Report
 
-Generated: 2026-05-17 19:24 MST
+Generated: 2026-05-18 19:20 MST
+Reporting window: since paper resume (2026-05-17 19:20:00-07)
+~24 hours of paper trading under tiered MIN_EDGE_BY_COIN thresholds.
 
-## Status
+## Trades by side
 
-Paper scanner (`kalshi-crypto-scanner`) resumed at **19:20 MST** on 2026-05-17.
-All 5 priorities from the fix brief are complete:
+```
+no|74|21|88.98
+yes|28|3|-160.55
+```
 
-1. **P1 — fair_yes_probability**: 0 mismatches across 30 sampled rows. Function correct.
-2. **P2 — MIN_EDGE_BY_COIN**: Restored tiered values (BTC=10c, BNB/HYPE=8c, ETH/SOL/XRP/DOGE=4c). Deprecated `MIN_EDGE_CENTS` constant.
-3. **P3 — Orphan reconciliation**: `parse_market_ticker()` helper added. INSERT now populates 12 fields instead of 8. Trades 538/539 backfilled.
-4. **P4 — resolved_yes**: 3 random trades verified against Kalshi API — all consistent.
-5. **P5 — Paper resumed**: Scanner running every 60s.
+## Action distribution (top 15)
 
-## Premilinary data (24h window, pre-pause + post-resume)
+```
+edge_too_small|6052
+too_close_to_expiry|1061
+spread_too_wide|762
+positive_ev_direction_agreement_signal|190
+model_market_disagreement_too_large|154
+entry_too_expensive_for_ttl|101
+edge_ratio_too_small|93
+blocked_contrarian_cheap_yes|45
+blocked_contrarian_cheap_no|38
+blocked_spot_strike_deadzone|28
+yes_too_expensive_for_known_bias|22
+duplicate_market_position|6
+missing_ask|1
+blocked_direction_disagreement_no|1
+```
 
-Paper trades in last 24h (includes old relaxed filters, pre-tiered MIN_EDGE):
-- NO: 14 trades, 6 wins, -$8.41
-- YES: 14 trades, 4 wins, -$3.18
-- Total: -$11.59 on 28 trades
+## Edge-too-small breakdown by coin
 
-Decision actions (last 24h, paper):
-- edge_too_small: 4,363 — dominating filter
-- too_close_to_expiry: 894
-- spread_too_wide: 507
-- positive_ev trades executed: 30
+```
+BNB|0.90|-4.80|10.50|731
+BTC|2.37|-1.50|9.70|1031
+DOGE|-0.27|-4.80|5.00|887
+ETH|0.72|-4.30|5.90|811
+HYPE|0.02|-4.90|7.90|763
+SOL|0.75|-3.00|5.30|887
+XRP|0.41|-4.70|4.80|942
+```
 
-## Scanner verification
+## Interpretation
 
-Fresh scan cycle confirmed at 19:22 MST — all 7 coins analyzed. All decisions are `edge_too_small` under the new tiered thresholds, which is expected per the fix brief ("do not lower thresholds to get trades going").
-
-## Code changes deployed
-
-All changes committed and pushed to both repos:
-- `~/.hermes/scripts/crypto_intel.py` — MIN_EDGE_BY_COIN tiered values
-- `~/.hermes/scripts/kalshi-crypto-prod` — parse_market_ticker + reconciliation fix
-- `~/hermes-vault/hermes/code_review_20260518/` — code review data package
-
-## 24h report pending
-
-Paper needs to run for 24 hours under the new thresholds to generate meaningful
-post-fix data. The full 24h status report with trade counts by side and action
-distribution will be committed here after 19:20 MST on 2026-05-18.
+- If trades > 0: bot is finding edges under tiered thresholds. Check win rate and P&L.
+- If trades == 0: bot is not trading under current thresholds. This is a finding to report.
+- If edge_too_small dominates all coins equally, thresholds may be too aggressive for current market conditions.
+- If certain coins have zero opportunity (all too_close_to_expiry or spread_too_wide), those coins may be structurally unsuitable.
