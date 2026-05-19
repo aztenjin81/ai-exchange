@@ -458,9 +458,14 @@ All no_agent scripts produce stdout verbatim; empty stdout = silent. Agent-drive
 
 ## Current State (as of 2026-05-18)
 
-### Portfolio
-- **Paper balance (DB row id=1):** ~$999,975 (refilled to $1M on 2026-05-18; trading down slowly). No longer at risk of being overwritten by prod — see 2026-05-18 PM resolved-issues #6 and #7 below.
-- **Production balance (Kalshi API):** $45.92 (read directly from exchange; DB row id=1 is no longer written by prod)
+### Portfolio (corrected mental model — 2026-05-18 PM)
+
+The `kalshi_portfolio` row id=1 holds **two separate things**:
+- `starting_balance` ($10,000, static) + `total_realized_pnl` (+$869.69, running) → **paper equity** ($10,869.69). This is what dashboard's `fetch_paper_portfolio()` displays.
+- `current_balance` → **production balance**. Synced from Kalshi API by `kalshi-crypto-prod:get_balance()` on every prod cycle. Dashboard's `fetch_prod_portfolio()` reads this directly.
+
+Currently `current_balance` shows ~$999,975 — that is **garbage**, not a real balance. It is the residue of paper code (`crypto_intel.py:1739, 1455, 1556, 1901`) erroneously writing to prod's column. The garbage auto-corrects to the real prod API balance (~$45.92) on the next prod cycle. Prod has been paused since 2026-05-17 18:55, so the auto-correct hasn't fired since.
+
 - **Production exposure cap:** $1.00 per coin, $30 HALT floor
 - **Paper budget:** $4k max, 3 concurrent positions per coin
 
@@ -496,14 +501,14 @@ The log-normal `fair_yes_probability()` is directionally asymmetric on 15-min cr
 3. ~~Dashboard bid/ask only showing one side~~ — Fixed.
 4. ~~8¢ threshold killed all trades~~ — MIN_EDGE_CENTS loosened to 6 on 2026-05-18. Assessment: even at 6¢, the analyzer's per-coin minimums (BTC=10¢, HYPE=8¢) are the tighter constraint for those coins. Zero-trade window was primarily caused by the prod scanner being paused, not the threshold.
 5. ~~`require_direction_agreement` guard re-enabled (commit `022ac27`) then REVERTED (commit `a29f86c`)~~ — Re-enable was wrong. Backtest against 137 executed trades with full data showed the guard would block 91% of volume (217 of 232 trades), and while it correctly catches losers more often than winners (76% of blocks were losers), the trade-volume cost dwarfs the P&L benefit: blocking 89 NO bets costs +$394, blocking 48 YES bets saves -$409, net ~break-even. Lesson: the strategy's edge depends on Kalshi/spot/model **disagreement**, while the guard requires **agreement** — they are structurally opposed and cannot coexist. Per-coin YES disable (proposed; see Known Issues > Open) is a more surgical fix for the same losing trades without nuking volume.
-6. ~~Prod `get_balance` overwriting paper balance in shared `kalshi_portfolio` row id=1~~ — Fixed 2026-05-18 PM (commit `1d70b24`). Function made read-only: prefers Kalshi API balance for prod's halt-floor / sizing decisions; falls back to raw DB value if API is unavailable; no longer writes to DB. The `db_bal / 100.0 if db_bal > 1000` legacy-cents heuristic also removed (it only existed to repair damage this function caused). Note: other prod writes against `kalshi_portfolio` (win/loss counters at `:223–226`, cost deduction at `:527`) still touch row id=1 — same cross-strategy shared-row issue, deferred to a future per-strategy schema change.
+6. ~~Prod `get_balance` overwriting paper balance~~ (commit `1d70b24`) — REVERTED (commit `10b3f25`). The framing in this entry and in CLAUDE.md was wrong. Looking at `dashboard.py:36–65`: `kalshi_portfolio.current_balance` is **prod's** column (dashboard's `fetch_prod_portfolio()` reads it as the live prod balance synced from the Kalshi API). Paper's equity is computed separately from `starting_balance + total_realized_pnl` (dashboard's `fetch_paper_portfolio()`). The prior session's claim that prod was "destroying paper's bankroll" was based on a misread; paper's apparent $1M in `current_balance` was itself the bug — paper code (`crypto_intel.py:1739, 1455, 1556, 1901`) was writing to prod's column. Restoring the prod sync was the right call. The remaining issue is that several paper code paths still write to `current_balance` (which should be only prod's); cleanest fix would be to remove paper's writes there entirely and have it compute its own running bankroll from `starting_balance + total_realized_pnl` instead. Tracked separately under Known Issues > Open.
 7. ~~Paper `_execute_trade` silently dropping trades on balance check~~ — Fixed 2026-05-18 PM (commit `9b18bad`). Removed the `SELECT current_balance` + `if bal < cost: return None, None` block at `crypto_intel.py:1703–1708`. Paper is scoring not a broker sim and does not gate on capital; the gate caused the "executed-but-not-persisted" gap (decision-log `was_executed=True` rows with no corresponding `kalshi_trades` insert). The running balance deduction below is kept; the row can now go negative for paper, which is correct.
 
 ### Known Issues (Open)
 - **Prod scanner is paused** — needs manual re-enable via Hermes cron when ready to trade live again
 - **Insufficient resolved v2 trades** for calibration modeling — need 100-200 resolved trades before isotonic regression is viable
 - **Vault path in old docs says `~/.hermes-vault/`** — actual path is `~/hermes-vault/` (no dot prefix)
-- **Cross-strategy `kalshi_portfolio` row id=1 sharing** — prod still writes win/loss counters (lines 223/226) and cost deductions (line 527) to the row shared with paper. Minimal-fix get_balance (resolved issue #6) closed the loudest write path; remaining writes will still corrupt paper accounting when prod resumes. Real fix: per-strategy schema.
+- **Paper code writes to prod's `current_balance` column** (`crypto_intel.py:1739, 1455, 1556, 1901`, plus `_check_exits` etc.) — paper should not touch this column at all. Paper's own running bankroll, if it needs one, should be `starting_balance + total_realized_pnl` (already what the dashboard does) and `kalshi_portfolio.starting_balance` should never change after init. Clean fix: delete all paper writes against `current_balance`. Until then, those writes corrupt prod's display whenever prod isn't actively running to overwrite.
 - **`scan_micro_cap` (`crypto_intel.py:1783`) is dead code with a sizing bug** — no caller anywhere; if invoked manually with the current $1M paper balance, would attempt ~$500K real-money trade. Defensive clamp or function deletion is a follow-up.
 - **`fair_yes_probability` returns 0/1 on missing or zero vol** — `crypto_intel.py:155–156, 159–160`. Currently masked because `FALLBACK_VOL` covers all 7 coins, but the code is overconfident-by-default. Should return 0.5.
 - **`scan_and_log` budget / per-coin rejects don't mutate `signal["reason"]`** — lines 1631, 1638. Decision-log rows show misleading `action="positive_ev_..."` with `was_executed=False`. Observability nit.
