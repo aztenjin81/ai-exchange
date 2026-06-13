@@ -1,8 +1,9 @@
 ---
 type: reference
-status: draft
+status: live
 date: 2026-06-13
 tags: [hermes, web-ui, architecture, personalities, mcp, token-tracking, llm-management]
+updated: 2026-06-13
 ---
 
 # Hermes Personalities UI — Architecture
@@ -11,38 +12,26 @@ A web UI like Open WebUI, but instead of switching models, it switches entire He
 
 ## Architecture Overview
 
+Single-process design: FastAPI server serves both the REST/WebSocket API and a vanilla-JS single-page application. No build step, no separate frontend server.
+
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     SvelteKit SPA                           │
-│  ┌──────┐ ┌──────────┐ ┌──────────┐ ┌────────┐ ┌────────┐ │
-│  │Side- │ │  Chat    │ │ Config   │ │  MCP   │ │Provider│ │
-│  │ bar  │ │  View    │ │ Editor   │ │Manager │ │Manager │ │
-│  └──┬───┘ └────┬─────┘ └────┬─────┘ └───┬────┘ └───┬────┘ │
-│     └──────────┴────────────┴────────────┴──────────┘      │
-│                        │ WebSocket                          │
-└────────────────────────┼────────────────────────────────────┘
-                         │
-┌────────────────────────┼────────────────────────────────────┐
-│              FastAPI Server (Python)                        │
-│  ┌──────────┐  ┌───────────────────┐  ┌───────────────────┐ │
-│  │REST + WS │◄─┤ Streaming Bridge  │◄─┤ Personality Mgr   │ │
-│  └──────────┘  └────────┬──────────┘  └───────────────────┘ │
-│                         │                                    │
-│  ┌────────────────┐ ┌───┴────────┐ ┌────────────────────┐   │
-│  │  Token Tracker  │ │Hermes SDK  │ │  MCP Server Mgr   │   │
-│  └────────────────┘ │(AgentLoop) │ └────────────────────┘   │
-│                     └─────┬──────┘                          │
-│  ┌────────────────────┐   │         ┌──────────────────────┐│
-│  │ LLM Provider Mgr   │   │         │  SQLite + JSON Store ││
-│  └────────────────────┘   │         └──────────────────────┘│
-│                           │                                  │
-└───────────────────────────┼──────────────────────────────────┘
-                            │
-                    ┌───────┴───────┐
-                    │  config.yaml  │
-                    │  + .env       │
-                    │  + profiles/  │
-                    └───────────────┘
+┌───────────────────────────────────────────────────────────────┐
+│                    FastAPI Server (Python)                    │
+│  ┌────────────────┐  ┌─────────────────────┐  ┌────────────┐ │
+│  │  Static SPA    │  │  REST API Routers   │  │  WebSocket │ │
+│  │  (index.html)  │  │  30+ endpoints      │  │  /ws/chat  │ │
+│  └────────────────┘  └────────┬────────────┘  └─────┬──────┘ │
+│                               │                      │        │
+│  ┌────────────────┐  ┌───────┴────────┐  ┌──────────┴──────┐ │
+│  │  Services      │  │  SQLAlchemy    │  │  Token Tracker  │ │
+│  │  (CRUD, migration│  │  + SQLite     │  │  + Budget       │ │
+│  │   scan, test)   │  │               │  │  + Pricing      │ │
+│  └────────────────┘  └───────────────┘  └─────────────────┘  │
+│                                                               │
+└───────────────────────────────────────────────────────────────┘
+                          │
+                  Single port :8000
+```
 ```
 
 ## Backend Components
@@ -1157,3 +1146,58 @@ Goal: Auth, containerization, monitoring, cost alerting, cross-system dashboard.
 - [ ] Cron + workflow overview on dashboard (next N runs, recent completions, failure alerts)
 
 **Total estimated development time: 14-22 days for a solo developer (includes Phase 0 discovery/inventory).**
+
+---
+
+## Service & Operations
+
+### Current Deployment
+
+The application runs as a single-process FastAPI server on port 8000. The SvelteKit frontend was removed and archived to `frontend-archive/` on 2026-06-13. The UI is a vanilla-JS single-page app served at `/` with no build step.
+
+| Item | Value |
+|------|-------|
+| URL | http://192.168.1.226:8000 |
+| Process | systemd: `hermes-personalities-ui.service` |
+| Backend code | `/root/hermes-personalities-ui/backend/app/` |
+| SPA source | `/root/hermes-personalities-ui/backend/app/static/index.html` |
+| SQLite DB | `/root/hermes-personalities-ui/backend/data/personalities.db` |
+
+### systemd Service
+
+```
+/etc/systemd/system/hermes-personalities-ui.service
+```
+
+- Auto-starts on boot
+- Always restarts on failure (5s delay)
+- Logs to journalctl
+
+```
+# Tail logs
+journalctl -u hermes-personalities-ui -f
+
+# Restart
+sudo systemctl restart hermes-personalities-ui
+
+# Check status
+sudo systemctl status hermes-personalities-ui
+```
+
+### Manual Start (development)
+
+```bash
+/root/hermes-personalities-ui/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+### Key Fixes (applied 2026-06-13)
+
+- **Migration scanner crash**: Hermes config's `custom_providers` is a list, not a dict. Scanner called `.keys()` on it. Fixed with `isinstance()` guard in `migration.py`.
+- **SSR crash**: SvelteKit frontend used `window.location.hostname` at module level, crashing SSR (`window is not defined`). Resolved by removing SvelteKit entirely and replacing with vanilla-JS SPA served by the backend.
+- **SQLite path**: Database URL was relative (`./data/personalities.db`). Changed to absolute to avoid CWD issues with uvicorn/systemd.
+- **MCP API path**: Endpoints are at `/api/mcp/servers`, not `/api/mcp`. Frontend was calling the wrong path.
+
+### Docker
+
+A `docker-compose.yml` and Dockerfiles exist but are not actively used. Current deployment is bare-metal via systemd.
+
